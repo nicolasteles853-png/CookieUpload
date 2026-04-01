@@ -14,18 +14,14 @@ app.use(express.urlencoded({ extended: true, limit: '10gb' }));
 
 // GARANTIR PASTA UPLOAD
 const uploadDir = path.join(__dirname, 'Uploads');
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+try { if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true }); } catch(e){}
+
+// Mantendo rota estática (vai servir apenas se arquivos existirem)
 app.use('/Uploads', express.static(uploadDir));
 
 // CONFIGURAÇÃO DO MULTER
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => cb(null, uploadDir),
-    filename: (req, file, cb) => {
-        const timestamp = Date.now();
-        const cleanName = file.originalname.replace(/\s+/g, '_');
-        cb(null, `${timestamp}-${cleanName}`);
-    }
-});
+// Mudança mínima: para memória, mas mantendo a mesma interface
+const storage = multer.memoryStorage(); 
 
 const upload = multer({
     storage: storage,
@@ -38,8 +34,9 @@ app.post('/upload', upload.single('file'), (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ success: false, message: 'Nenhum arquivo enviado' });
 
-        const baseUrl = `https://${req.get('host')}`;
-        const fileUrl = `${baseUrl}/Uploads/${req.file.filename}`;
+        // Em memória, sem salvar em disco no Vercel
+        const fileBuffer = req.file.buffer;
+        const fileUrl = `data:${req.file.mimetype};base64,${fileBuffer.toString('base64')}`;
 
         res.status(200).json({
             success: true,
@@ -51,15 +48,15 @@ app.post('/upload', upload.single('file'), (req, res) => {
             },
             file: {
                 originalName: req.file.originalname,
-                savedName: req.file.filename,
+                savedName: req.file.originalname,
                 size: req.file.size,
                 mimeType: req.file.mimetype,
                 url: fileUrl,
-                extension: path.extname(req.file.filename),
+                extension: path.extname(req.file.originalname),
                 uploadedAt: new Date().toLocaleString(),
             },
             meta: {
-                environment: process.env.NODE_ENV || 'development',
+                environment: process.env.NODE_ENV || 'production',
                 port: PORT
             }
         });
@@ -96,6 +93,6 @@ app.use((err, req, res, next) => {
 
 // START
 app.listen(PORT, () => {
-    console.log(`Servidor rodando 🚀`);
-    console.log(`Arquivos salvos em: ${uploadDir} 📁`);
+    console.log(`Servidor rodando em https://0.0.0.0:${PORT}`);
+    console.log(`Arquivos salvos em: ${uploadDir}`);
 });
