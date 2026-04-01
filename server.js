@@ -3,9 +3,16 @@ const multer = require('multer');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
+const https = require('https');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// CONFIG HTTPS (CERTIFICADO)
+const options = {
+    key: fs.readFileSync('key.pem'),
+    cert: fs.readFileSync('cert.pem')
+};
 
 // CONFIG BÁSICA
 app.use(cors());
@@ -38,7 +45,7 @@ app.post('/upload', upload.single('file'), (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ success: false, message: 'Nenhum arquivo enviado' });
 
-        const baseUrl = `${req.protocol}://${req.get('host')}`;
+        const baseUrl = `https://${req.get('host')}`;
         const fileUrl = `${baseUrl}/Uploads/${req.file.filename}`;
 
         res.status(200).json({
@@ -74,7 +81,7 @@ app.get('/files', (req, res) => {
     fs.readdir(uploadDir, (err, files) => {
         if (err) return res.status(500).json({ success: false, message: 'Erro ao listar arquivos' });
 
-        const baseUrl = `${req.protocol}://${req.get('host')}`;
+        const baseUrl = `https://${req.get('host')}`;
         const fileList = files.map(file => ({ name: file, url: `${baseUrl}/Uploads/${file}` }));
 
         res.json({ success: true, total: fileList.length, files: fileList });
@@ -94,8 +101,8 @@ app.use((err, req, res, next) => {
     res.status(500).json({ success: false, message: 'Erro inesperado', error: err.message });
 });
 
-// START
-app.listen(PORT, () => {
-    console.log(`Servidor rodando em http://localhost:${PORT}`);
+// START HTTPS
+https.createServer(options, app).listen(PORT, () => {
+    console.log(`Servidor rodando em https://localhost:${PORT}`);
     console.log(`Arquivos salvos em: ${uploadDir}`);
 });
