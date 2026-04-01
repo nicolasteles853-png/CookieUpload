@@ -7,20 +7,16 @@ const fs = require('fs');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// PROXY HTTPS (RENDER)
 app.set('trust proxy', 1);
 
-// CONFIG BÁSICA
 app.use(cors());
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '200gb' }));
+app.use(express.urlencoded({ extended: true, limit: '200gb' }));
 
-// GARANTIR PASTA UPLOAD
 const uploadDir = path.join(__dirname, 'Uploads');
 try { if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true }); } catch(e){}
 app.use('/Uploads', express.static(uploadDir));
 
-// CONFIGURAÇÃO DO MULTER
 const storage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, uploadDir),
     filename: (req, file, cb) => {
@@ -32,37 +28,45 @@ const storage = multer.diskStorage({
 
 const upload = multer({
     storage: storage,
-    fileFilter: (req, file, cb) => cb(null, true),
-    limits: { fileSize: 10 * 1024 * 1024 }
+    limits: { fileSize: 200 * 1024 * 1024 * 1024 }
 });
 
-// BASE URL SEMPRE HTTPS
 function getBaseUrl(req) {
     return 'https://' + req.get('host');
 }
 
-// ROTA UPLOAD
 app.post('/upload', upload.single('file'), (req, res) => {
     try {
-        if (!req.file) return res.status(400).json({ success: false, message: 'Nenhum arquivo enviado' });
+        if (!req.file) return res.status(400).json({ success: false });
 
         const baseUrl = getBaseUrl(req);
         const fileUrl = baseUrl + '/Uploads/' + req.file.filename;
 
         res.status(200).json({
             success: true,
+            status: 200,
             message: 'Upload realizado com sucesso',
             file: {
+                name: req.file.originalname,
+                saved: req.file.filename,
+                size: req.file.size,
+                type: req.file.mimetype,
+                extension: path.extname(req.file.filename),
                 url: fileUrl
-            }
+            },
+            server: {
+                host: req.hostname,
+                ip: req.ip,
+                protocol: 'https'
+            },
+            timestamp: new Date().toISOString()
         });
 
     } catch (error) {
-        res.status(500).json({ success: false, message: 'Erro interno', error: error.message });
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 
-// LISTAR ARQUIVOS
 app.get('/files', (req, res) => {
     fs.readdir(uploadDir, (err, files) => {
         if (err) return res.status(500).json({ success: false });
@@ -81,15 +85,13 @@ app.get('/files', (req, res) => {
     });
 });
 
-// ERROS
 app.use((err, req, res, next) => {
     if (err instanceof multer.MulterError) {
         return res.status(400).json({ success: false, message: err.message });
     }
-    res.status(500).json({ success: false, message: 'Erro', error: err.message });
+    res.status(500).json({ success: false, error: err.message });
 });
 
-// START
 app.listen(PORT, () => {
     console.log('Rodando em https://localhost:' + PORT);
 });
