@@ -3,16 +3,12 @@ const multer = require('multer');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
-const https = require('https');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// CONFIG HTTPS (CERTIFICADO)
-const options = {
-    key: fs.readFileSync('key.pem'),
-    cert: fs.readFileSync('cert.pem')
-};
+// PROXY HTTPS (RENDER)
+app.set('trust proxy', 1);
 
 // CONFIG BÁSICA
 app.use(cors());
@@ -30,7 +26,7 @@ const storage = multer.diskStorage({
     filename: (req, file, cb) => {
         const timestamp = Date.now();
         const cleanName = file.originalname.replace(/\s+/g, '_');
-        cb(null, `${timestamp}-${cleanName}`);
+        cb(null, timestamp + '-' + cleanName);
     }
 });
 
@@ -40,69 +36,60 @@ const upload = multer({
     limits: { fileSize: 10 * 1024 * 1024 }
 });
 
+// BASE URL SEMPRE HTTPS
+function getBaseUrl(req) {
+    return 'https://' + req.get('host');
+}
+
 // ROTA UPLOAD
 app.post('/upload', upload.single('file'), (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ success: false, message: 'Nenhum arquivo enviado' });
 
-        const baseUrl = `https://${req.get('host')}`;
-        const fileUrl = `${baseUrl}/Uploads/${req.file.filename}`;
+        const baseUrl = getBaseUrl(req);
+        const fileUrl = baseUrl + '/Uploads/' + req.file.filename;
 
         res.status(200).json({
             success: true,
             message: 'Upload realizado com sucesso',
-            timestamp: new Date().toISOString(),
-            server: {
-                hostname: req.hostname,
-                ip: req.ip,
-            },
             file: {
-                originalName: req.file.originalname,
-                savedName: req.file.filename,
-                size: req.file.size,
-                mimeType: req.file.mimetype,
-                url: fileUrl,
-                extension: path.extname(req.file.filename),
-                uploadedAt: new Date().toLocaleString(),
-            },
-            meta: {
-                environment: process.env.NODE_ENV || 'production',
-                port: PORT
+                url: fileUrl
             }
         });
 
     } catch (error) {
-        res.status(500).json({ success: false, message: 'Erro interno no servidor', error: error.message });
+        res.status(500).json({ success: false, message: 'Erro interno', error: error.message });
     }
 });
 
 // LISTAR ARQUIVOS
 app.get('/files', (req, res) => {
     fs.readdir(uploadDir, (err, files) => {
-        if (err) return res.status(500).json({ success: false, message: 'Erro ao listar arquivos' });
+        if (err) return res.status(500).json({ success: false });
 
-        const baseUrl = `https://${req.get('host')}`;
-        const fileList = files.map(file => ({ name: file, url: `${baseUrl}/Uploads/${file}` }));
+        const baseUrl = getBaseUrl(req);
+        const list = [];
 
-        res.json({ success: true, total: fileList.length, files: fileList });
+        for (let i = 0; i < files.length; i++) {
+            list.push({
+                name: files[i],
+                url: baseUrl + '/Uploads/' + files[i]
+            });
+        }
+
+        res.json({ success: true, files: list });
     });
 });
 
-// DELETAR ARQUIVO (DESATIVADO)
-app.delete('/delete/:filename', (req, res) => {
-    res.status(403).json({ success: false, message: 'Deleção desativada no servidor' });
-});
-
-// TRATAMENTO GLOBAL DE ERROS
+// ERROS
 app.use((err, req, res, next) => {
     if (err instanceof multer.MulterError) {
         return res.status(400).json({ success: false, message: err.message });
     }
-    res.status(500).json({ success: false, message: 'Erro inesperado', error: err.message });
+    res.status(500).json({ success: false, message: 'Erro', error: err.message });
 });
 
-// START HTTPS
-https.createServer(options, app).listen(PORT, () => {
-    console.log(`Servidor rodando em https://localhost:${PORT}`);
-    console.log(`Arquivos salvos em: ${uploadDir}`);
+// START
+app.listen(PORT, () => {
+    console.log('Rodando em https://localhost:' + PORT);
 });
